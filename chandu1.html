@@ -1,0 +1,789 @@
+from flask import Flask, request, jsonify, render_template_string
+from datetime import datetime
+import random
+import re
+
+app = Flask(__name__)
+
+# ---------------------------------------------------------
+# Cloud-Based Cybersecurity Threat Detection System
+# ---------------------------------------------------------
+
+security_logs = []
+
+threat_statistics = {
+    "total_events": 0,
+    "safe": 0,
+    "suspicious": 0,
+    "critical": 0
+}
+
+# Suspicious IP addresses for demonstration
+BLACKLISTED_IPS = {
+    "192.168.100.50",
+    "10.10.10.99",
+    "172.16.0.99"
+}
+
+# Suspicious keywords
+SUSPICIOUS_KEYWORDS = [
+    "malware",
+    "ransomware",
+    "phishing",
+    "sql injection",
+    "brute force",
+    "port scan",
+    "ddos",
+    "unauthorized",
+    "exploit",
+    "virus"
+]
+
+
+def detect_threat(ip, activity):
+    """
+    Detects threats using simple rule-based analysis.
+    """
+
+    activity_lower = activity.lower()
+
+    score = 0
+    reasons = []
+
+    # IP detection
+    if ip in BLACKLISTED_IPS:
+        score += 50
+        reasons.append("Blacklisted IP address")
+
+    # Keyword detection
+    for keyword in SUSPICIOUS_KEYWORDS:
+        if keyword in activity_lower:
+            score += 30
+            reasons.append(f"Suspicious activity: {keyword}")
+
+    # SQL injection patterns
+    sql_patterns = [
+        "' or '1'='1",
+        "union select",
+        "drop table",
+        "select * from",
+        "--"
+    ]
+
+    for pattern in sql_patterns:
+        if pattern in activity_lower:
+            score += 40
+            reasons.append("Possible SQL injection")
+
+    # Brute force detection
+    if "failed login" in activity_lower:
+        score += 25
+        reasons.append("Repeated failed login attempt")
+
+    # Random network anomaly simulation
+    if "port scan" in activity_lower:
+        score += 40
+        reasons.append("Network port scanning detected")
+
+    # Determine threat level
+    if score >= 70:
+        level = "Critical"
+        threat_statistics["critical"] += 1
+    elif score >= 30:
+        level = "Suspicious"
+        threat_statistics["suspicious"] += 1
+    else:
+        level = "Safe"
+        threat_statistics["safe"] += 1
+
+    threat_statistics["total_events"] += 1
+
+    if not reasons:
+        reasons.append("No known threat detected")
+
+    return level, score, reasons
+
+
+def add_log(ip, activity):
+    level, score, reasons = detect_threat(ip, activity)
+
+    log = {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "ip": ip,
+        "activity": activity,
+        "level": level,
+        "score": score,
+        "reasons": reasons
+    }
+
+    security_logs.insert(0, log)
+
+    # Keep latest 50 logs
+    if len(security_logs) > 50:
+        security_logs.pop()
+
+    return log
+
+
+# ---------------------------------------------------------
+# Dashboard HTML
+# ---------------------------------------------------------
+
+HTML = """
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Cloud Cybersecurity Threat Detection</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #0b1120;
+    color: white;
+}
+
+/* HEADER */
+
+.header {
+    background: #111827;
+    padding: 20px 40px;
+    border-bottom: 1px solid #263244;
+}
+
+.header h1 {
+    color: #38bdf8;
+    font-size: 28px;
+}
+
+.header p {
+    color: #94a3b8;
+    margin-top: 5px;
+}
+
+/* CONTAINER */
+
+.container {
+    width: 92%;
+    max-width: 1400px;
+    margin: 30px auto;
+}
+
+/* CARDS */
+
+.cards {
+    display: grid;
+    grid-template-columns:
+    repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.card {
+    background: #111827;
+    padding: 25px;
+    border-radius: 12px;
+    border: 1px solid #263244;
+}
+
+.card h3 {
+    color: #94a3b8;
+    font-size: 15px;
+}
+
+.card .number {
+    font-size: 35px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.total {
+    color: #38bdf8;
+}
+
+.safe {
+    color: #22c55e;
+}
+
+.suspicious {
+    color: #f59e0b;
+}
+
+.critical {
+    color: #ef4444;
+}
+
+/* PANELS */
+
+.panel {
+    background: #111827;
+    border: 1px solid #263244;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 25px;
+}
+
+.panel h2 {
+    margin-bottom: 20px;
+    color: #e2e8f0;
+}
+
+/* FORM */
+
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr auto;
+    gap: 15px;
+}
+
+input {
+    width: 100%;
+    padding: 14px;
+    background: #020617;
+    border: 1px solid #334155;
+    color: white;
+    border-radius: 8px;
+    outline: none;
+}
+
+input:focus {
+    border-color: #38bdf8;
+}
+
+button {
+    padding: 14px 25px;
+    background: #0284c7;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:hover {
+    background: #0369a1;
+}
+
+/* RESULT */
+
+.result {
+    margin-top: 20px;
+    padding: 20px;
+    border-radius: 8px;
+    display: none;
+}
+
+.result.safe-result {
+    background: #064e3b;
+    border: 1px solid #10b981;
+}
+
+.result.suspicious-result {
+    background: #78350f;
+    border: 1px solid #f59e0b;
+}
+
+.result.critical-result {
+    background: #7f1d1d;
+    border: 1px solid #ef4444;
+}
+
+/* TABLE */
+
+.table-container {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    background: #020617;
+    color: #94a3b8;
+    text-align: left;
+}
+
+th, td {
+    padding: 14px;
+    border-bottom: 1px solid #263244;
+}
+
+.badge {
+    padding: 6px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.badge-safe {
+    background: #064e3b;
+    color: #4ade80;
+}
+
+.badge-suspicious {
+    background: #78350f;
+    color: #fbbf24;
+}
+
+.badge-critical {
+    background: #7f1d1d;
+    color: #f87171;
+}
+
+/* FOOTER */
+
+.footer {
+    text-align: center;
+    padding: 25px;
+    color: #64748b;
+}
+
+/* RESPONSIVE */
+
+@media(max-width: 900px) {
+
+    .cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+}
+
+@media(max-width: 600px) {
+
+    .cards {
+        grid-template-columns: 1fr;
+    }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="header">
+
+<h1>☁ Cloud-Based Cybersecurity Threat Detection</h1>
+
+<p>Real-Time Security Monitoring & Threat Analysis System</p>
+
+</div>
+
+
+<div class="container">
+
+<!-- STATISTICS -->
+
+<div class="cards">
+
+<div class="card">
+
+<h3>Total Security Events</h3>
+
+<div class="number total" id="total">
+{{ stats.total_events }}
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h3>Safe Events</h3>
+
+<div class="number safe" id="safe">
+{{ stats.safe }}
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h3>Suspicious Events</h3>
+
+<div class="number suspicious" id="suspicious">
+{{ stats.suspicious }}
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h3>Critical Threats</h3>
+
+<div class="number critical" id="critical">
+{{ stats.critical }}
+</div>
+
+</div>
+
+</div>
+
+
+<!-- THREAT SCANNER -->
+
+<div class="panel">
+
+<h2>🔍 Threat Detection Scanner</h2>
+
+<div class="form-grid">
+
+<input
+type="text"
+id="ip"
+placeholder="Enter IP Address"
+value="192.168.1.10"
+>
+
+<input
+type="text"
+id="activity"
+placeholder="Enter network activity"
+>
+
+<button onclick="scanThreat()">
+SCAN THREAT
+</button>
+
+</div>
+
+
+<div id="result" class="result"></div>
+
+</div>
+
+
+<!-- SECURITY LOG -->
+
+<div class="panel">
+
+<h2>🛡 Security Event Logs</h2>
+
+<div class="table-container">
+
+<table>
+
+<thead>
+
+<tr>
+
+<th>Time</th>
+<th>IP Address</th>
+<th>Activity</th>
+<th>Threat Level</th>
+<th>Score</th>
+
+</tr>
+
+</thead>
+
+<tbody id="logs">
+
+{% for log in logs %}
+
+<tr>
+
+<td>{{ log.time }}</td>
+
+<td>{{ log.ip }}</td>
+
+<td>{{ log.activity }}</td>
+
+<td>
+
+{% if log.level == "Safe" %}
+
+<span class="badge badge-safe">
+SAFE
+</span>
+
+{% elif log.level == "Suspicious" %}
+
+<span class="badge badge-suspicious">
+SUSPICIOUS
+</span>
+
+{% else %}
+
+<span class="badge badge-critical">
+CRITICAL
+</span>
+
+{% endif %}
+
+</td>
+
+<td>{{ log.score }}</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+
+</div>
+
+</div>
+
+
+<div class="footer">
+
+Cloud-Based Cybersecurity Threat Detection System © 2026
+
+</div>
+
+
+<script>
+
+async function scanThreat() {
+
+    const ip =
+        document.getElementById("ip").value;
+
+    const activity =
+        document.getElementById("activity").value;
+
+    if (!ip || !activity) {
+
+        alert("Please enter IP address and activity.");
+
+        return;
+
+    }
+
+    const response = await fetch("/scan", {
+
+        method: "POST",
+
+        headers: {
+            "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+            ip: ip,
+            activity: activity
+        })
+
+    });
+
+    const data = await response.json();
+
+    const result =
+        document.getElementById("result");
+
+    result.style.display = "block";
+
+    result.className = "result";
+
+    if (data.level === "Safe") {
+
+        result.classList.add("safe-result");
+
+    }
+    else if (data.level === "Suspicious") {
+
+        result.classList.add("suspicious-result");
+
+    }
+    else {
+
+        result.classList.add("critical-result");
+
+    }
+
+    result.innerHTML = `
+
+        <h3>Threat Level: ${data.level}</h3>
+
+        <p>
+        Threat Score: <strong>${data.score}</strong>
+        </p>
+
+        <p>
+        ${data.reasons.join("<br>")}
+        </p>
+
+    `;
+
+    updateDashboard();
+
+}
+
+
+async function updateDashboard() {
+
+    const response =
+        await fetch("/data");
+
+    const data =
+        await response.json();
+
+    document.getElementById("total").innerText =
+        data.stats.total_events;
+
+    document.getElementById("safe").innerText =
+        data.stats.safe;
+
+    document.getElementById("suspicious").innerText =
+        data.stats.suspicious;
+
+    document.getElementById("critical").innerText =
+        data.stats.critical;
+
+
+    const logs =
+        document.getElementById("logs");
+
+    logs.innerHTML = "";
+
+    data.logs.forEach(log => {
+
+        let badge = "";
+
+        if (log.level === "Safe") {
+
+            badge =
+            '<span class="badge badge-safe">SAFE</span>';
+
+        }
+        else if (log.level === "Suspicious") {
+
+            badge =
+            '<span class="badge badge-suspicious">SUSPICIOUS</span>';
+
+        }
+        else {
+
+            badge =
+            '<span class="badge badge-critical">CRITICAL</span>';
+
+        }
+
+        logs.innerHTML += `
+
+        <tr>
+
+            <td>${log.time}</td>
+
+            <td>${log.ip}</td>
+
+            <td>${log.activity}</td>
+
+            <td>${badge}</td>
+
+            <td>${log.score}</td>
+
+        </tr>
+
+        `;
+
+    });
+
+}
+
+</script>
+
+</body>
+
+</html>
+"""
+
+
+# ---------------------------------------------------------
+# Routes
+# ---------------------------------------------------------
+
+@app.route("/")
+def home():
+
+    return render_template_string(
+        HTML,
+        stats=threat_statistics,
+        logs=security_logs
+    )
+
+
+@app.route("/scan", methods=["POST"])
+def scan():
+
+    data = request.get_json()
+
+    ip = data.get("ip", "")
+    activity = data.get("activity", "")
+
+    log = add_log(ip, activity)
+
+    return jsonify(log)
+
+
+@app.route("/data")
+def data():
+
+    return jsonify({
+        "stats": threat_statistics,
+        "logs": security_logs
+    })
+
+
+# ---------------------------------------------------------
+# Demo security events
+# ---------------------------------------------------------
+
+add_log(
+    "192.168.1.10",
+    "Normal user login"
+)
+
+add_log(
+    "192.168.100.50",
+    "Unauthorized login attempt"
+)
+
+add_log(
+    "10.10.10.99",
+    "Port scan detected"
+)
+
+
+# ---------------------------------------------------------
+# Start Server
+# ---------------------------------------------------------
+
+if __name__ == "__main__":
+
+    print("--------------------------------------------")
+    print(" Cloud-Based Cybersecurity Threat Detection")
+    print("--------------------------------------------")
+    print("Server running at:")
+    print("http://127.0.0.1:5000")
+    print("--------------------------------------------")
+
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=True
+    )
